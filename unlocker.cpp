@@ -82,10 +82,6 @@ DWORD LaunchProcessGetPID(const char* path) {
     return pid;
 }
 
-#include <windows.h>
-#include <tlhelp32.h>
-#include <iostream>
-
 DWORD GetProcessIdByName(const wchar_t* processName) {
     PROCESSENTRY32W pe;
     pe.dwSize = sizeof(PROCESSENTRY32W);
@@ -103,6 +99,16 @@ DWORD GetProcessIdByName(const wchar_t* processName) {
 
     CloseHandle(snapshot);
     return 0;
+}
+
+bool ProcessExists(DWORD pid) {
+    HANDLE hProcess = OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION, FALSE, pid);
+
+    if (hProcess == NULL || !hProcess)
+        return false;
+
+    CloseHandle(hProcess);
+    return true;
 }
 
 int main(){
@@ -138,7 +144,7 @@ if (!IsRunningAsAdmin()) {
     //     return 1;
     // }
 
-
+    SetConsoleTitleW(L"Genshin FPS Unlocker");
     DWORD pid = GetProcessIdByName(L"GenshinImpact.exe");
     HANDLE hProcess = OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION, FALSE, pid);
 
@@ -149,18 +155,34 @@ if (!IsRunningAsAdmin()) {
     uintptr_t base = GetModuleBaseAddress(pid, L"GenshinImpact.exe");
 
     uintptr_t addresses[] = {0x4B4087C, 0x4DC3A18, 0x4DC6328, 0x4DC8A0C};
-    cout<< "Enabling uncapped"<<endl;
-    for(int i=0;i<4;i++){
-        uintptr_t address = base + addresses[i];
-        int value = 0;
-        ReadProcessMemory(hProcess, (LPCVOID)address, &value, sizeof(value), nullptr);
-        int newValue = 999;
-        WriteProcessMemory(hProcess, (LPVOID)address, &newValue, sizeof(newValue), nullptr);
+    cout<< "Writing Uncapped FPS"<<endl;
+    bool f = false;
+    while (true) {
+        DWORD pid = GetProcessIdByName(L"GenshinImpact.exe");
+        if (ProcessExists(pid)) {
+            for(int i=0;i<4;i++){
+                uintptr_t address = base + addresses[i];
+                int value = 0;
+                int newValue = 999;
+                if (ReadProcessMemory(hProcess, (LPCVOID)address, &value, sizeof(value), nullptr)< newValue){
+                    WriteProcessMemory(hProcess, (LPVOID)address, &newValue, sizeof(newValue), nullptr);
+                }
+                
+            }
+            if(!f){
+                cout<< "FPS Uncapped"<<endl;
+                cout << "Keep this running..."<<endl;
+                f=!f;
+            }
+        } else {
+            std::cout << "Game is closed...\n";
+            break;
+            return 0;
+        }
+
+        Sleep(5000); 
     }
     
-
-    cout << "Press any key to exit...";
-    cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-    cin.get();
+    
 
 }
