@@ -101,15 +101,15 @@ DWORD GetProcessIdByName(const wchar_t* processName) {
     return 0;
 }
 
-bool ProcessExists(DWORD pid) {
-    HANDLE hProcess = OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION, FALSE, pid);
+// bool ProcessExists(DWORD pid) {
+//     HANDLE hProcess = OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION, FALSE, pid);
 
-    if (hProcess == NULL || !hProcess)
-        return false;
+//     if (hProcess == NULL || !hProcess)
+//         return false;
 
-    CloseHandle(hProcess);
-    return true;
-}
+//     CloseHandle(hProcess);
+//     return true;
+// }
 
 int main(){
 if (!IsRunningAsAdmin()) {
@@ -153,18 +153,25 @@ if (!IsRunningAsAdmin()) {
         return 1;
     }
     uintptr_t base = GetModuleBaseAddress(pid, L"GenshinImpact.exe");
-
     uintptr_t addresses[] = {0x4B4087C, 0x4DC3A18, 0x4DC6328, 0x4DC8A0C};
     cout<< "Writing Uncapped FPS"<<endl;
     bool f = false;
     while (true) {
         DWORD pid = GetProcessIdByName(L"GenshinImpact.exe");
-        if (ProcessExists(pid)) {
+        HANDLE hProcess = OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION, FALSE, pid);
+        
+        if (hProcess == NULL || !hProcess){
+            std::cout << "Game is closed...\n";
+            break;
+            return 0;
+        }else{
+            uintptr_t base = GetModuleBaseAddress(pid, L"GenshinImpact.exe");
             for(int i=0;i<4;i++){
                 uintptr_t address = base + addresses[i];
                 int value = 0;
                 int newValue = 999;
-                if (ReadProcessMemory(hProcess, (LPCVOID)address, &value, sizeof(value), nullptr)< newValue){
+                ReadProcessMemory(hProcess, (LPCVOID)address, &value, sizeof(value), nullptr);
+                if (value< newValue){
                     WriteProcessMemory(hProcess, (LPVOID)address, &newValue, sizeof(newValue), nullptr);
                 }
                 
@@ -174,12 +181,7 @@ if (!IsRunningAsAdmin()) {
                 cout << "Keep this running..."<<endl;
                 f=!f;
             }
-        } else {
-            std::cout << "Game is closed...\n";
-            break;
-            return 0;
         }
-
         Sleep(5000); 
     }
     
