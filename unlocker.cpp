@@ -1,10 +1,101 @@
 #include <windows.h>
+#include <commdlg.h>
+#include <string>
+#include <vector>
 #include <iostream>
-using namespace std;
-#include <tlhelp32.h>
-#include <shellapi.h>
-#include <limits>
+#pragma comment(lib, "Comdlg32.lib")
 
+bool InjectDlls(HANDLE processHandle, const std::vector<std::wstring>& dllPaths)
+{
+    if (dllPaths.empty())
+        return true;
+
+    HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll");
+
+    LPVOID loadLibrary =
+        (LPVOID)GetProcAddress(kernel32, "LoadLibraryW");
+
+    if (!loadLibrary)
+        return false;
+
+    LPVOID remoteBuffer = VirtualAllocEx(
+        processHandle,
+        nullptr,
+        0x1000,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_READWRITE
+    );
+
+    if (!remoteBuffer)
+        return false;
+
+    for (const auto& dllPath : dllPaths)
+    {
+        std::wcout << L"Injecting: " << dllPath << std::endl;
+
+        SIZE_T sizeBytes =
+            (dllPath.length() + 1) * sizeof(wchar_t);
+
+        if (!WriteProcessMemory(
+            processHandle,
+            remoteBuffer,
+            dllPath.c_str(),
+            sizeBytes,
+            nullptr))
+        {
+            std::wcout << L"WriteProcessMemory failed: "
+                       << GetLastError() << std::endl;
+
+            VirtualFreeEx(processHandle, remoteBuffer, 0, MEM_RELEASE);
+            return false;
+        }
+
+        HANDLE thread = CreateRemoteThread(
+            processHandle,
+            nullptr,
+            0,
+            (LPTHREAD_START_ROUTINE)loadLibrary,
+            remoteBuffer,
+            0,
+            nullptr
+        );
+
+        if (!thread)
+        {
+            std::wcout << L"CreateRemoteThread failed: "
+                       << GetLastError() << std::endl;
+
+            VirtualFreeEx(processHandle, remoteBuffer, 0, MEM_RELEASE);
+            return false;
+        }
+
+        WaitForSingleObject(thread, INFINITE);
+
+        DWORD remoteResult = 0;
+        GetExitCodeThread(thread, &remoteResult);
+
+        std::wcout << L"LoadLibraryW returned: 0x"
+                   << std::hex
+                   << remoteResult
+                   << std::endl;
+
+        CloseHandle(thread);
+
+        std::vector<BYTE> zeroBuffer(sizeBytes, 0);
+
+        WriteProcessMemory(
+            processHandle,
+            remoteBuffer,
+            zeroBuffer.data(),
+            sizeBytes,
+            nullptr
+        );
+    }
+
+    VirtualFreeEx(processHandle, remoteBuffer, 0, MEM_RELEASE);
+
+    return true;
+}
 bool IsRunningAsAdmin() {
     BOOL isAdmin = FALSE;
     PSID adminGroup = NULL;
@@ -25,166 +116,133 @@ bool IsRunningAsAdmin() {
 
     return isAdmin;
 }
+std::wstring PickExeFile()
+{
+    wchar_t fileName[MAX_PATH] = {};
 
-uintptr_t GetModuleBaseAddress(DWORD pid, const wchar_t* moduleName) {
-    uintptr_t baseAddress = 0;
-
-    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
-
-    MODULEENTRY32W moduleEntry;
-    moduleEntry.dwSize = sizeof(moduleEntry);
-
-    if (Module32FirstW(snapshot, &moduleEntry)) {
-        do {
-            if (!_wcsicmp(moduleEntry.szModule, moduleName)) {
-                baseAddress = (uintptr_t)moduleEntry.modBaseAddr;
-                break;
-            }
-        } while (Module32NextW(snapshot, &moduleEntry));
-    }
-
-    CloseHandle(snapshot);
-    return baseAddress;
-}
-
-bool FileExists(const char* path) {
-    DWORD attr = GetFileAttributesA(path);
-    return (attr != INVALID_FILE_ATTRIBUTES &&
-           !(attr & FILE_ATTRIBUTE_DIRECTORY));
-}
-
-bool PickExe(char* outPath) {
-    OPENFILENAMEA ofn = { 0 };
+    OPENFILENAMEW ofn = {};
     ofn.lStructSize = sizeof(ofn);
-    ofn.lpstrFilter = "Executable Files (*.exe)\0*.exe\0";
-    ofn.lpstrFile = outPath;
+
+    ofn.lpstrFilter =
+        L"Executable Files (*.exe)\0*.exe\0"
+        L"All Files (*.*)\0*.*\0";
+
+    ofn.lpstrFile = fileName;
     ofn.nMaxFile = MAX_PATH;
-    ofn.Flags = OFN_FILEMUSTEXIST;
 
-    return GetOpenFileNameA(&ofn);
+    ofn.Flags =
+        OFN_FILEMUSTEXIST |
+        OFN_PATHMUSTEXIST;
+
+    if (GetOpenFileNameW(&ofn))
+        return fileName;
+
+    return L"";
 }
+std::wstring CurrentDirectory()
+{
+    wchar_t path[MAX_PATH];
 
-DWORD LaunchProcessGetPID(const char* path) {
-    STARTUPINFOA si = { 0 };
-    PROCESS_INFORMATION pi = { 0 };
-    si.cb = sizeof(si);
+    GetModuleFileNameW(
+        nullptr,
+        path,
+        MAX_PATH
+    );
 
-    if (!CreateProcessA(path, NULL, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
-        std::cout << "Failed to launch. Error: " << GetLastError() << "\n";
-        return 0;
-    }
+    std::wstring exePath = path;
 
-    DWORD pid = pi.dwProcessId;
+    size_t pos = exePath.find_last_of(L"\\/");
 
-    CloseHandle(pi.hThread);
-    CloseHandle(pi.hProcess);
-
-    return pid;
+    return exePath.substr(0, pos);
 }
-
-DWORD GetProcessIdByName(const wchar_t* processName) {
-    PROCESSENTRY32W pe;
-    pe.dwSize = sizeof(PROCESSENTRY32W);
-
-    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-
-    if (Process32FirstW(snapshot, &pe)) {
-        do {
-            if (!_wcsicmp(pe.szExeFile, processName)) {
-                CloseHandle(snapshot);
-                return pe.th32ProcessID;
-            }
-        } while (Process32NextW(snapshot, &pe));
-    }
-
-    CloseHandle(snapshot);
-    return 0;
-}
-
-// bool ProcessExists(DWORD pid) {
-//     HANDLE hProcess = OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION, FALSE, pid);
-
-//     if (hProcess == NULL || !hProcess)
-//         return false;
-
-//     CloseHandle(hProcess);
-//     return true;
-// }
-
-int main(){
-if (!IsRunningAsAdmin()) {
+int main()
+{
+    if (!IsRunningAsAdmin()) {
         char path[MAX_PATH];
         GetModuleFileNameA(NULL, path, MAX_PATH);
 
         ShellExecuteA(NULL, "runas", path, NULL, NULL, SW_SHOWNORMAL);
         return 0;
     }
-    // const char* defaultPath = "F:\\HoYoPlay\\games\\Genshin Impact game\\GenshinImpact.exe";
+    SetConsoleTitleW(L"Genshin FPS Unlocker by Glazybyte");
 
-    // char path[MAX_PATH] = { 0 };
+    std::wstring cd = CurrentDirectory();
 
-    // if (FileExists(defaultPath)) {
-    //     std::cout << "Using default exe.\n";
-    //     strcpy_s(path, defaultPath);
-    // } else {
-    //     std::cout << "Default exe not found. Please select one.\n";
-
-    //     if (!PickExe(path)) {
-    //         std::cout << "No file selected. Exiting.\n";
-    //         return 1;
-    //     }
-    // }
-
-    // std::cout << "Launching: " << path << "\n";
-
-    // DWORD pid = LaunchProcessGetPID(path);
-
-    // if (pid == 0) {
-    //     std::cout << "Launch failed.\n";
-    //     return 1;
-    // }
-
-    SetConsoleTitleW(L"Genshin FPS Unlocker");
-    DWORD pid = GetProcessIdByName(L"GenshinImpact.exe");
-    HANDLE hProcess = OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION, FALSE, pid);
-
-    if(!hProcess) {
-        cout << "Failed to open process\n";
-        return 1;
-    }
-    uintptr_t base = GetModuleBaseAddress(pid, L"GenshinImpact.exe");
-    uintptr_t addresses[] = {0x4B4087C, 0x4DC3A18, 0x4DC6328, 0x4DC8A0C};
-    cout<< "Writing Uncapped FPS"<<endl;
-    bool f = false;
-    while (true) {
-        DWORD pid = GetProcessIdByName(L"GenshinImpact.exe");
-        HANDLE hProcess = OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION, FALSE, pid);
-        
-        if (hProcess == NULL || !hProcess){
-            std::cout << "Game is closed...\n";
-            break;
-            return 0;
-        }else{
-            uintptr_t base = GetModuleBaseAddress(pid, L"GenshinImpact.exe");
-            for(int i=0;i<4;i++){
-                uintptr_t address = base + addresses[i];
-                int value = 0;
-                int newValue = 999;
-                ReadProcessMemory(hProcess, (LPCVOID)address, &value, sizeof(value), nullptr);
-                if (value< newValue){
-                    WriteProcessMemory(hProcess, (LPVOID)address, &newValue, sizeof(newValue), nullptr);
-                }
-                
-            }
-            if(!f){
-                cout<< "FPS Uncapped"<<endl;
-                cout << "Keep this running..."<<endl;
-                f=!f;
-            }
-        }
-        Sleep(5000); 
-    }
     
-    
+    std::wstring dllPath = cd + L"\\payload.dll";
 
+    std::wcout<<"Select GenshinImpact.exe to continue: "<<std::endl;
+    system("pause");
+
+    std::wstring exePath = PickExeFile();
+
+    if (exePath.empty())
+    {
+        std::wcout << L"No EXE selected.\n";
+        return 0;
+    }
+
+   
+    std::wstring workingDir = exePath;
+
+    size_t lastSlash = workingDir.find_last_of(L"\\/");
+
+    if (lastSlash != std::wstring::npos)
+    {
+        workingDir = workingDir.substr(0, lastSlash);
+    }
+
+    STARTUPINFOW si = {};
+    si.cb = sizeof(si);
+
+    PROCESS_INFORMATION processInfo = {};
+
+    DWORD creationFlags = CREATE_SUSPENDED;
+
+    BOOL created = CreateProcessW(
+        exePath.c_str(),
+        nullptr,
+        nullptr,
+        nullptr,
+        FALSE,
+        creationFlags,
+        nullptr,
+        workingDir.c_str(),
+        &si,
+        &processInfo
+    );
+
+    if (!created)
+    {
+        std::wcout << L"Failed to launch Game. Error: " << GetLastError() << std::endl;
+
+        return 0;
+    }
+
+    // std::wcout << L"Process launched.\n";
+    // std::wcout << L"PID: "<< processInfo.dwProcessId << std::endl;
+
+    std::vector<std::wstring> dlls =
+    {
+        dllPath
+    };
+
+    if (!InjectDlls(processInfo.hProcess, dlls))
+    {
+        // std::wcout << L"Injection failed.\n";
+    }
+    else
+    {
+        // std::wcout << L"Injection successful.\n";
+    }
+
+
+    ResumeThread(processInfo.hThread);
+
+    CloseHandle(processInfo.hThread);
+    CloseHandle(processInfo.hProcess);
+
+    // system("pause");
+
+    return 0;
 }
