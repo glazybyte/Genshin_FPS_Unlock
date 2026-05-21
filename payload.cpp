@@ -13,10 +13,10 @@ DWORD WINAPI MainThread(LPVOID lpParam)
         );
         
         uintptr_t base =(uintptr_t)GetModuleHandleW(NULL);
-        uintptr_t addr1 = base + 0x4B4087C;
-        uintptr_t addr2 = base + 0x4DC3A18;
-        uintptr_t addr3 = base + 0x4DC6328;
-        uintptr_t addr4 = base + 0x4DC8A0C;
+        uintptr_t addr1 = base + 0x4C8C8F8;
+        uintptr_t addr2 = base + 0x4F18E8C;
+        uintptr_t addr3 = base + 0x4F1B250;
+        uintptr_t addr4 = base + 0x4F218E0;
         while(true){
             *(int*)addr1 = 999;
             *(int*)addr2 = 999;
