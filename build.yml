@@ -22,14 +22,30 @@ jobs:
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-binutils
 
-      - name: Build (same as your local)
+      - name: Build DLL and EXE
         shell: msys2 {0}
         run: |
           /ucrt64/bin/windres app.rc -O coff -o app.o
-          g++ unlocker.cpp app.o -o Genshin_FPS_Unlock.exe -lcomdlg32 -lshell32
+          /ucrt64/bin/windres resource.rc -O coff -o resource.o
+
+          g++ -shared -o payload.dll payload.cpp \
+            -static-libgcc -static-libstdc++
+
+          g++ unlocker.cpp resource.o app.o \
+            -o Genshin_FPS_unlock.exe \
+            -lcomdlg32 \
+            -static \
+            -static-libgcc \
+            -static-libstdc++
 
       - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
-          name: Genshin-FPS-Unlock-exe
-          path: Genshin_FPS_Unlock.exe
+          name: Genshin_FPS_unlock-exe
+          path: Genshin_FPS_unlock.exe
+
+      - name: Upload DLL
+        uses: actions/upload-artifact@v4
+        with:
+          name: payload-dll
+          path: payload.dll
