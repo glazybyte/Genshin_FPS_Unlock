@@ -175,18 +175,14 @@ int main()
             RT_RCDATA
         );
         HGLOBAL hData = LoadResource(nullptr, hRes);
-
         DWORD size = SizeofResource(nullptr, hRes);
         void* dllData = LockResource(hData);
-
         std::ofstream file("payload.dll", std::ios::binary);
         file.write(reinterpret_cast<char*>(dllData), size);
     }
     SetConsoleTitleW(L"Genshin FPS Unlocker by Glazybyte");
 
     std::wstring cd = CurrentDirectory();
-
-    
     std::wstring dllPath = cd + L"\\payload.dll";
 
     std::wcout<<"Select GenshinImpact.exe to continue: "<<std::endl;
