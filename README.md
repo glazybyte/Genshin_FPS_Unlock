@@ -6,7 +6,6 @@ A lightweight tool that unlocks the FPS limit in Genshin Impact using code injec
 
 - Unlocks FPS cap
 - Lightweight native C++ implementation
-- Uses a separate DLL payload
 - No external runtime dependencies required
 - Built using MinGW/MSYS2
 
@@ -30,6 +29,7 @@ pacman -S mingw-w64-ucrt-x86_64-gcc
 
 ```bash
 C:\msys64\ucrt64\bin\windres.exe app.rc -O coff -o app.o
+C:\msys64\ucrt64\bin\windres.exe resource.rc -O coff -o resource.o
 ```
 
 ### 2. Build DLL Payload
@@ -41,16 +41,15 @@ g++ -shared -o payload.dll payload.cpp -static-libgcc -static-libstdc++
 ### 3. Build Injector Executable
 
 ```bash
-g++ unlocker.cpp app.o -o Genshin_FPS_unlock.exe -lcomdlg32
+g++ unlocker.cpp resource.o app.o -o Genshin_FPS_unlock.exe -lcomdlg32 -static -static-libgcc -static-libstdc++
 ```
 
 ---
 
 ## Usage
 
-1. Extract files to a folder other than Genshin's folder.
-2. Launch `Genshin_FPS_unlock.exe`.
-3. It will ask you to select `GenshinImpact.exe`.
+1. Launch `Genshin_FPS_unlock.exe`.
+2. It will ask you to select `GenshinImpact.exe`.
 
 Usually located at:
 
@@ -64,10 +63,9 @@ C:\Program Files\HoYoPlay\games\Genshin Impact game
 
 ## Notes
 
-- Keep `payload.dll` in the same folder as the executable.
 - Compile using the **UCRT64** environment in MSYS2.
 - Antivirus software may flag DLL injection tools as suspicious.
-
+- Avoid placing Unlocker in same Directory as Genshin
 ---
 
 ## Disclaimer

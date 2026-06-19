@@ -3,6 +3,9 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <winuser.h>
+#include "resource.h"
+#include <fstream>
 #pragma comment(lib, "Comdlg32.lib")
 
 bool InjectDlls(HANDLE processHandle, const std::vector<std::wstring>& dllPaths)
@@ -163,6 +166,21 @@ int main()
 
         ShellExecuteA(NULL, "runas", path, NULL, NULL, SW_SHOWNORMAL);
         return 0;
+    }
+    if (GetFileAttributesW(L"payload.dll") == INVALID_FILE_ATTRIBUTES)
+    {
+        HRSRC hRes = FindResource(
+            nullptr,
+            MAKEINTRESOURCE(IDR_PAYLOAD),
+            RT_RCDATA
+        );
+        HGLOBAL hData = LoadResource(nullptr, hRes);
+
+        DWORD size = SizeofResource(nullptr, hRes);
+        void* dllData = LockResource(hData);
+
+        std::ofstream file("payload.dll", std::ios::binary);
+        file.write(reinterpret_cast<char*>(dllData), size);
     }
     SetConsoleTitleW(L"Genshin FPS Unlocker by Glazybyte");
 
